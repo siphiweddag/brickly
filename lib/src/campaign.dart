@@ -30,12 +30,15 @@ class CampaignLevel {
 
   static List<CampaignLevel> get all => List.generate(50, (index) {
     final number = index + 1;
-    final targetLines = 1 + index ~/ 4;
+    // A Journey level should require a real run, not end after the player's
+    // first successful row. The target increases every two levels so players
+    // get one opportunity to consolidate each new difficulty step.
+    final targetLines = 5 + index ~/ 2;
     final prefillRows = math.min(4, index ~/ 10);
     return CampaignLevel(
       number: number,
       targetLines: targetLines,
-      parMoves: targetLines * 8 + prefillRows * 2,
+      parMoves: targetLines * 4 + 4 + prefillRows * 2,
       prefillRows: prefillRows,
     );
   });

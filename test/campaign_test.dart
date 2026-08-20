@@ -11,7 +11,24 @@ void main() {
     expect(levels, hasLength(50));
     expect(levels.first.number, 1);
     expect(levels.last.number, 50);
+    expect(levels.first.targetLines, 5);
+    expect(levels.last.targetLines, 29);
+    expect(
+      levels.every((level) => level.targetLines >= 5),
+      isTrue,
+      reason: 'No Journey level should finish after clearing only one row.',
+    );
     expect(levels.first.targetLines, lessThan(levels.last.targetLines));
+    for (var index = 1; index < levels.length; index++) {
+      expect(
+        levels[index].targetLines,
+        greaterThanOrEqualTo(levels[index - 1].targetLines),
+      );
+      expect(
+        levels[index].parMoves,
+        greaterThanOrEqualTo(levels[index - 1].parMoves),
+      );
+    }
     expect(levels.first.prefillRows, 0);
     expect(levels.last.prefillRows, 4);
   });

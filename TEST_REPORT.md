@@ -20,8 +20,8 @@ verified in Play Console, and the critical journey passes on a physical device.
 - repeated cascade clearing until no full row remains;
 - gravity only after a row breaks, with remaining blocks settling to the base;
 - top-stack game-over handling and undo behavior;
-- 50-level Brickly Journey with targets, par moves, stars, unlocks, and saved
-  progress;
+- 50-level Brickly Journey with meaningful 5-to-29-row targets, scaling par
+  moves, stars, unlocks, and saved progress;
 - Endless Classic mode and corrected high-score persistence;
 - five-step first-run/replayable tutorial;
 - functional sound, haptics, placement-guide, and progress-reset settings;
