@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'arcade_ui.dart';
+import 'campaign.dart';
 import 'game_screen.dart';
+import 'release_info.dart';
 
 class BricklyHome extends StatefulWidget {
   const BricklyHome({super.key});
@@ -52,13 +54,25 @@ class _BricklyHomeState extends State<BricklyHome> {
   }
 
   void _openSettings() {
-    showDialog<void>(
-      context: context,
-      builder: (context) => const _SettingsDialog(),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => const SettingsScreen()));
   }
 
-  void _startClassic() {
+  Future<bool> _ensureTutorial() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool('tutorial_seen_v1') == true) return true;
+    if (!mounted) return false;
+    return await Navigator.of(context).push<bool>(
+          MaterialPageRoute<bool>(
+            builder: (_) => const HowToPlayScreen(firstRun: true),
+          ),
+        ) ??
+        false;
+  }
+
+  Future<void> _startClassic() async {
+    if (!await _ensureTutorial() || !mounted) return;
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => GameScreen(
@@ -68,6 +82,24 @@ class _BricklyHomeState extends State<BricklyHome> {
         ),
       ),
     );
+  }
+
+  Future<void> _startJourney() async {
+    if (!await _ensureTutorial() || !mounted) return;
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => LevelSelectScreen(
+          backgroundStyle: _background,
+          blockSkin: _blockSkin,
+        ),
+      ),
+    );
+  }
+
+  void _openHowToPlay() {
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => const HowToPlayScreen()));
   }
 
   @override
@@ -86,7 +118,9 @@ class _BricklyHomeState extends State<BricklyHome> {
                     index: _tab,
                     children: [
                       _LobbyPage(
-                        onPlay: _startClassic,
+                        onJourney: _startJourney,
+                        onClassic: _startClassic,
+                        onHowToPlay: _openHowToPlay,
                         background: _background,
                       ),
                       _InventoryPage(
@@ -112,8 +146,15 @@ class _BricklyHomeState extends State<BricklyHome> {
 }
 
 class _LobbyPage extends StatelessWidget {
-  const _LobbyPage({required this.onPlay, required this.background});
-  final VoidCallback onPlay;
+  const _LobbyPage({
+    required this.onJourney,
+    required this.onClassic,
+    required this.onHowToPlay,
+    required this.background,
+  });
+  final VoidCallback onJourney;
+  final VoidCallback onClassic;
+  final VoidCallback onHowToPlay;
   final ArcadeBackgroundStyle background;
 
   @override
@@ -140,12 +181,32 @@ class _LobbyPage extends StatelessWidget {
                 ),
                 const SizedBox(height: 32),
                 ArcadeButton(
-                  label: 'PLAY CLASSIC',
-                  icon: Icons.view_module_rounded,
-                  onPressed: onPlay,
+                  label: 'BRICKLY JOURNEY',
+                  icon: Icons.emoji_events_rounded,
+                  onPressed: onJourney,
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  height: 54,
+                  child: OutlinedButton.icon(
+                    onPressed: onClassic,
+                    icon: const Icon(Icons.all_inclusive_rounded),
+                    label: const Text('ENDLESS CLASSIC'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: ArcadeColors.white,
+                      side: const BorderSide(
+                        color: ArcadeColors.cyan,
+                        width: 2,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 28),
-                const _HowToPlay(),
+                _HowToPlay(onOpen: onHowToPlay),
               ],
             ),
           ),
@@ -272,7 +333,8 @@ class _LogoBrick extends StatelessWidget {
 }
 
 class _HowToPlay extends StatelessWidget {
-  const _HowToPlay();
+  const _HowToPlay({required this.onOpen});
+  final VoidCallback onOpen;
 
   @override
   Widget build(BuildContext context) {
@@ -304,6 +366,15 @@ class _HowToPlay extends StatelessWidget {
           const _RuleRow(
             number: '4',
             text: 'Break rows before the stack reaches the top.',
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: TextButton.icon(
+              onPressed: onOpen,
+              icon: const Icon(Icons.school_rounded),
+              label: const Text('OPEN FULL TUTORIAL'),
+            ),
           ),
         ],
       ),

@@ -1,0 +1,6 @@
+# Copy to android/key.properties and replace the placeholders locally.
+# Never commit key.properties or the keystore file.
+storePassword=REPLACE_WITH_SECURE_PASSWORD
+keyPassword=REPLACE_WITH_SECURE_PASSWORD
+keyAlias=upload
+storeFile=/absolute/path/to/brickly-upload-keystore.jks

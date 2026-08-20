@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'arcade_ui.dart';
+import 'campaign.dart';
 import 'game_engine.dart';
 
 class GameScreen extends StatefulWidget {
@@ -13,11 +14,13 @@ class GameScreen extends StatefulWidget {
     this.onExit,
     this.backgroundStyle = ArcadeBackgroundStyle.classic,
     this.blockSkin = BlockSkinStyle.glossy,
+    this.campaignLevel,
   });
 
   final VoidCallback? onExit;
   final ArcadeBackgroundStyle backgroundStyle;
   final BlockSkinStyle blockSkin;
+  final CampaignLevel? campaignLevel;
 
   @override
   State<GameScreen> createState() => _GameScreenState();
@@ -31,6 +34,10 @@ class _GameScreenState extends State<GameScreen> {
   int _best = 0;
   bool _effects = true;
   bool _placementGuide = true;
+  int _campaignLines = 0;
+  int _moves = 0;
+  int _lastLinesCleared = 0;
+  bool _levelResolved = false;
   String? _toast;
   Timer? _toastTimer;
 
@@ -40,7 +47,41 @@ class _GameScreenState extends State<GameScreen> {
   @override
   void initState() {
     super.initState();
+    _applyCampaignLayout();
     _loadPreferences();
+  }
+
+  void _applyCampaignLayout() {
+    final level = widget.campaignLevel;
+    if (level == null || level.prefillRows == 0) return;
+    const colors = [
+      Color(0xFFFFB648),
+      Color(0xFF5DD6C0),
+      Color(0xFF8D7CFF),
+      Color(0xFFFF718B),
+      Color(0xFF58A9FF),
+    ];
+    for (var offset = 0; offset < level.prefillRows; offset++) {
+      final row = GameEngine.boardSize - 1 - offset;
+      for (var col = 0; col < GameEngine.boardSize; col++) {
+        final isGap = (col + offset * 2 + level.number) % 3 == 0;
+        if (!isGap) {
+          _game.board[row][col] =
+              colors[(col + offset + level.number) % colors.length];
+        }
+      }
+    }
+  }
+
+  void _resetGame() {
+    _game.reset();
+    _campaignLines = 0;
+    _moves = 0;
+    _lastLinesCleared = 0;
+    _levelResolved = false;
+    _selected = null;
+    _previewOrigin = null;
+    _applyCampaignLayout();
   }
 
   Future<void> _loadPreferences() async {
@@ -76,14 +117,99 @@ class _GameScreenState extends State<GameScreen> {
     }
     _selected = null;
     _previewOrigin = null;
+    _moves++;
+    _lastLinesCleared = result.linesCleared;
+    _campaignLines += result.linesCleared;
     _saveBest();
     if (result.linesCleared > 0) {
       _showToast('${result.blocksCleared} BLOCKS BROKEN  +${result.points}');
     }
     setState(() {});
-    if (_game.isGameOver) {
+    final target = widget.campaignLevel?.targetLines;
+    if (target != null && _campaignLines >= target && !_levelResolved) {
+      _levelResolved = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _showLevelComplete());
+    } else if (_game.isGameOver) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _showGameOver());
     }
+  }
+
+  Future<void> _showLevelComplete() async {
+    final level = widget.campaignLevel;
+    if (level == null) return;
+    final stars = _moves <= level.parMoves
+        ? 3
+        : _moves <= level.parMoves + 6
+        ? 2
+        : 1;
+    await CampaignProgress.complete(level, stars);
+    if (!mounted) return;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF06427F),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(28),
+          side: const BorderSide(color: ArcadeColors.yellow, width: 3),
+        ),
+        title: Text(
+          level.number == 50
+              ? 'JOURNEY COMPLETE!'
+              : 'LEVEL ${level.number} COMPLETE',
+          textAlign: TextAlign.center,
+          style: Theme.of(
+            context,
+          ).textTheme.headlineSmall?.copyWith(color: ArcadeColors.yellow),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(
+                3,
+                (index) => Icon(
+                  index < stars
+                      ? Icons.star_rounded
+                      : Icons.star_border_rounded,
+                  size: 42,
+                  color: index < stars
+                      ? ArcadeColors.yellow
+                      : ArcadeColors.muted,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              '$_campaignLines rows cleared in $_moves moves',
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: ArcadeColors.white),
+            ),
+          ],
+        ),
+        actionsAlignment: MainAxisAlignment.center,
+        actions: [
+          if (level.number < 50)
+            FilledButton.icon(
+              onPressed: () {
+                Navigator.pop(context);
+                Navigator.pop(this.context, level.number + 1);
+              },
+              icon: const Icon(Icons.arrow_forward_rounded),
+              label: const Text('NEXT LEVEL'),
+            ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              Navigator.pop(this.context);
+            },
+            child: Text(level.number == 50 ? 'BACK TO LEVELS' : 'LEVELS'),
+          ),
+        ],
+      ),
+    );
   }
 
   double get _boardCellSize {
@@ -150,7 +276,7 @@ class _GameScreenState extends State<GameScreen> {
           side: const BorderSide(color: ArcadeColors.cyan, width: 3),
         ),
         title: Text(
-          'GAME OVER',
+          widget.campaignLevel == null ? 'GAME OVER' : 'LEVEL FAILED',
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.headlineLarge?.copyWith(
             color: ArcadeColors.yellow,
@@ -169,16 +295,23 @@ class _GameScreenState extends State<GameScreen> {
             ),
             const SizedBox(height: 14),
             Text(
-              '${_game.score}',
+              widget.campaignLevel == null
+                  ? '${_game.score}'
+                  : '$_campaignLines / ${widget.campaignLevel!.targetLines}',
               style: const TextStyle(fontSize: 38, fontWeight: FontWeight.w900),
             ),
-            const Text(
-              'FINAL SCORE',
-              style: TextStyle(color: ArcadeColors.cyan, letterSpacing: 2),
+            Text(
+              widget.campaignLevel == null ? 'FINAL SCORE' : 'ROWS CLEARED',
+              style: const TextStyle(
+                color: ArcadeColors.cyan,
+                letterSpacing: 2,
+              ),
             ),
             const SizedBox(height: 8),
             Text(
-              'Best  $_best',
+              widget.campaignLevel == null
+                  ? 'Best  $_best'
+                  : 'Try a different placement plan',
               style: const TextStyle(
                 color: ArcadeColors.yellow,
                 fontWeight: FontWeight.w700,
@@ -191,7 +324,7 @@ class _GameScreenState extends State<GameScreen> {
           FilledButton.icon(
             onPressed: () {
               Navigator.pop(context);
-              setState(_game.reset);
+              setState(_resetGame);
             },
             icon: const Icon(Icons.refresh_rounded),
             label: const Text('PLAY AGAIN'),
@@ -220,7 +353,11 @@ class _GameScreenState extends State<GameScreen> {
           side: const BorderSide(color: ArcadeColors.cyan, width: 2),
         ),
         title: const Text('Start a new board?'),
-        content: const Text('Your current score will be saved as your best.'),
+        content: Text(
+          widget.campaignLevel == null
+              ? 'Your current score will be saved as your best.'
+              : 'Your progress in this attempt will restart.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -230,10 +367,7 @@ class _GameScreenState extends State<GameScreen> {
             onPressed: () {
               Navigator.pop(context);
               _saveBest();
-              setState(() {
-                _game.reset();
-                _selected = null;
-              });
+              setState(_resetGame);
             },
             child: const Text('NEW GAME'),
           ),
@@ -306,17 +440,22 @@ class _GameScreenState extends State<GameScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'HIGH SCORE',
+            widget.campaignLevel == null ? 'HIGH SCORE' : 'MOVES',
             style: Theme.of(
               context,
             ).textTheme.labelSmall?.copyWith(color: ArcadeColors.muted),
           ),
-          Text('$_best', style: Theme.of(context).textTheme.titleMedium),
+          Text(
+            widget.campaignLevel == null ? '$_best' : '$_moves',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
         ],
       ),
       const Spacer(),
       Text(
-        'CLASSIC',
+        widget.campaignLevel == null
+            ? 'ENDLESS'
+            : 'LEVEL ${widget.campaignLevel!.number}',
         style: Theme.of(context).textTheme.labelLarge?.copyWith(
           color: ArcadeColors.white,
           letterSpacing: 1.2,
@@ -363,6 +502,12 @@ class _GameScreenState extends State<GameScreen> {
             : () {
                 setState(() {
                   _game.undo();
+                  _campaignLines = (_campaignLines - _lastLinesCleared).clamp(
+                    0,
+                    999,
+                  );
+                  _moves = (_moves - 1).clamp(0, 999);
+                  _lastLinesCleared = 0;
                   _selected = null;
                 });
               },
@@ -372,13 +517,15 @@ class _GameScreenState extends State<GameScreen> {
       Column(
         children: [
           Text(
-            'SCORE',
+            widget.campaignLevel == null ? 'SCORE' : 'ROWS',
             style: Theme.of(
               context,
             ).textTheme.labelLarge?.copyWith(color: ArcadeColors.cyan),
           ),
           Text(
-            '${_game.score}',
+            widget.campaignLevel == null
+                ? '${_game.score}'
+                : '$_campaignLines / ${widget.campaignLevel!.targetLines}',
             style: Theme.of(context).textTheme.headlineLarge?.copyWith(
               shadows: const [
                 Shadow(color: Color(0xFF001744), offset: Offset(0, 3)),
